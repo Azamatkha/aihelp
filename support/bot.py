@@ -2,6 +2,7 @@
 admin javobi -> user. Hamma holat bazada saqlanadi."""
 
 import html
+import json
 import logging
 
 import telebot
@@ -52,6 +53,7 @@ def setup_commands(bot: telebot.TeleBot) -> None:
     admin_cmds = [
         types.BotCommand("pending", "Javob kutayotganlar"),
         types.BotCommand("cancel", "Javob yozishni bekor qilish"),
+        types.BotCommand("yuklash", "APK ni tekshirish (yangisini — faylni shu yerga tashlang)"),
     ]
     for admin_id in settings.ADMIN_IDS:
         try:
@@ -289,9 +291,46 @@ def handle_lang(bot, c) -> None:
 # ------------------------------------------------------------------ #
 # Ilova (APK) yuborish
 # ------------------------------------------------------------------ #
-# Telegram file_id keshi: bir marta yuklangan faylni qayta yuklamaymiz.
+# Asosiy usul: admin APK ni botga Telegram orqali tashlaydi, bot uning file_id sini
+# data/apk.json ga saqlaydi va userlarga shu file_id bilan yuboradi. Bot API o'zi 50 MB
+# dan katta fayl yuklay olmaydi, lekin file_id bilan istalgan hajmdagini qayta yuboradi —
+# fayl Telegram serverida turadi, har safar yuklanmaydi.
+# Zaxira usul: aiapk/ papkasidagi fayl (faqat 50 MB gacha).
+APK_STORE = settings.DATA_DIR / "apk.json"
+BOT_UPLOAD_LIMIT = 50 * 1024 * 1024
+
+# aiapk/ dan yuklangan fayl uchun file_id keshi.
 # Kalit — (fayl yo'li, hajmi, o'zgargan vaqti): yangi APK qo'yilsa kesh o'zi eskiradi.
 _apk_cache: dict[tuple, str] = {}
+
+
+def stored_apk() -> dict | None:
+    try:
+        return json.loads(APK_STORE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def is_apk(m) -> bool:
+    return m.content_type == "document" and (m.document.file_name or "").lower().endswith(".apk")
+
+
+def save_apk(bot, m) -> None:
+    """Admin tashlagan APK ni userlarga yuboriladigan joriy ilova qilib saqlaydi."""
+    doc = m.document
+    data = {
+        "file_id": doc.file_id,
+        "file_name": doc.file_name,
+        "file_size": doc.file_size,
+        "set_by": m.from_user.first_name or str(m.from_user.id),
+        "set_at": timezone.localtime().strftime("%d.%m.%Y %H:%M"),
+    }
+    APK_STORE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    mb = (doc.file_size or 0) / 1024 / 1024
+    send(bot, m.chat.id,
+         f"✅ Yangi APK saqlandi: <b>{html.escape(doc.file_name)}</b> ({mb:.1f} MB).\n"
+         f"Endi userlar /yuklash bosganda shu fayl yuboriladi. Tekshirish: /yuklash",
+         reply_to=m.message_id)
 
 
 def latest_apk():
@@ -304,15 +343,28 @@ def latest_apk():
 
 
 def send_apk(bot, chat_id: int, lang: str | None) -> None:
+    caption = texts.t("apk_caption", lang)
+    stored = stored_apk()
+    if stored:
+        try:
+            bot.send_document(chat_id, stored["file_id"], caption=caption, parse_mode="HTML")
+            return
+        except ApiTelegramException as e:
+            log.error("Saqlangan APK (file_id) yuborilmadi, papkadan urinamiz: %s", e)
+
     apk = latest_apk()
     if apk is None:
-        log.warning("APK topilmadi: %s papkasi bo'sh", settings.APK_DIR)
+        log.warning("APK yo'q: adminlar botga .apk tashlamagan, %s papkasi ham bo'sh", settings.APK_DIR)
+        bot.send_message(chat_id, texts.t("apk_missing", lang))
+        return
+    if apk.stat().st_size > BOT_UPLOAD_LIMIT:
+        log.error("%s 50 MB dan katta — bot uni yuklay olmaydi. Admin APK ni botga "
+                  "Telegram orqali tashlashi kerak.", apk.name)
         bot.send_message(chat_id, texts.t("apk_missing", lang))
         return
 
     st = apk.stat()
     key = (str(apk), st.st_size, st.st_mtime)
-    caption = texts.t("apk_caption", lang)
     if key in _apk_cache:
         try:
             bot.send_document(chat_id, _apk_cache[key], caption=caption, parse_mode="HTML")
@@ -393,6 +445,10 @@ def handle_admin(bot, msgs: list) -> None:
     if target is None:
         state = AdminState.objects.select_related("reply_to__user").filter(admin_id=first.from_user.id).first()
         target = state.reply_to if state else None
+    # Hech kimga javob emas, shunchaki .apk tashlandi — bu yangi ilova versiyasi
+    if target is None and len(msgs) == 1 and is_apk(first):
+        save_apk(bot, first)
+        return
     if target is None:
         send(
             bot, first.chat.id,
@@ -499,7 +555,9 @@ def register_handlers(bot: telebot.TeleBot) -> None:
         if is_admin(m.from_user.id):
             send(bot, m.chat.id,
                  "👋 Siz adminsiz. Murojaatlar shu yerga keladi.\n\n"
-                 "/pending — javob kutayotganlar\n/cancel — javob yozishni bekor qilish")
+                 "/pending — javob kutayotganlar\n/cancel — javob yozishni bekor qilish\n"
+                 "/yuklash — userlarga ketadigan APK ni tekshirish\n\n"
+                 "📲 Yangi APK: faylni shu chatga tashlang (Reply qilmasdan) — userlarga shu yuboriladi.")
             return
         user = upsert_user(m.from_user)
         if user.reg_step == Step.DONE:
