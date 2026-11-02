@@ -24,6 +24,8 @@ CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 ADMIN_IDS = [int(x) for x in env_list("ADMIN_IDS")]
 TELEGRAM_PROXY = os.getenv("TELEGRAM_PROXY", "")
+# Userlarga yuboriladigan Android ilova (.apk) shu papkadan olinadi — eng yangisi
+APK_DIR = Path(os.getenv("APK_DIR") or BASE_DIR / "aiapk")
 
 INSTALLED_APPS = [
     "django.contrib.admin",

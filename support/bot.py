@@ -204,6 +204,17 @@ def phone_keyboard(lang: str) -> types.ReplyKeyboardMarkup:
     return kb
 
 
+def main_keyboard(lang: str) -> types.ReplyKeyboardMarkup:
+    """Ro'yxatdan o'tgan user uchun doimiy menyu — ilovani yuklab olish tugmasi."""
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.row(types.KeyboardButton(texts.t("get_app", lang)))
+    return kb
+
+
+def first_name(u) -> str:
+    return u.first_name or u.username or ""
+
+
 def ask_language(bot, chat_id: int) -> None:
     bot.send_message(chat_id, texts.CHOOSE_LANG, reply_markup=lang_keyboard())
 
@@ -212,10 +223,11 @@ def ask_phone(bot, chat_id: int, lang: str) -> None:
     bot.send_message(chat_id, texts.t("ask_phone", lang), reply_markup=phone_keyboard(lang))
 
 
-def finish_registration(bot, user: TelegramUser, chat_id: int) -> None:
+def finish_registration(bot, user: TelegramUser, m) -> None:
     user.reg_step = Step.DONE
     user.save(update_fields=["reg_step", "phone"])
-    bot.send_message(chat_id, texts.t("welcome", user.language), reply_markup=types.ReplyKeyboardRemove())
+    bot.send_message(m.chat.id, texts.t("welcome", user.language, name=first_name(m.from_user)),
+                     reply_markup=main_keyboard(user.language))
 
 
 def continue_registration(bot, user: TelegramUser, m) -> None:
@@ -230,9 +242,9 @@ def continue_registration(bot, user: TelegramUser, m) -> None:
             return
         phone = m.contact.phone_number
         user.phone = phone if phone.startswith("+") else f"+{phone}"
-        finish_registration(bot, user, m.chat.id)
+        finish_registration(bot, user, m)
     elif m.text in texts.SKIP_TEXTS:
-        finish_registration(bot, user, m.chat.id)
+        finish_registration(bot, user, m)
     else:
         ask_phone(bot, m.chat.id, lang)
 
@@ -254,6 +266,47 @@ def handle_lang(bot, c) -> None:
         pass
     if user.reg_step == Step.PHONE:
         ask_phone(bot, c.message.chat.id, code)
+
+
+# ------------------------------------------------------------------ #
+# Ilova (APK) yuborish
+# ------------------------------------------------------------------ #
+# Telegram file_id keshi: bir marta yuklangan faylni qayta yuklamaymiz.
+# Kalit — (fayl yo'li, hajmi, o'zgargan vaqti): yangi APK qo'yilsa kesh o'zi eskiradi.
+_apk_cache: dict[tuple, str] = {}
+
+
+def latest_apk():
+    """aiapk/ ichidagi eng yangi .apk fayl (yo'q bo'lsa — None)."""
+    folder = settings.APK_DIR
+    if not folder.is_dir():
+        return None
+    apks = [p for p in folder.iterdir() if p.is_file() and p.suffix.lower() == ".apk"]
+    return max(apks, key=lambda p: p.stat().st_mtime, default=None)
+
+
+def send_apk(bot, chat_id: int, lang: str | None) -> None:
+    apk = latest_apk()
+    if apk is None:
+        log.warning("APK topilmadi: %s papkasi bo'sh", settings.APK_DIR)
+        bot.send_message(chat_id, texts.t("apk_missing", lang))
+        return
+
+    st = apk.stat()
+    key = (str(apk), st.st_size, st.st_mtime)
+    caption = texts.t("apk_caption", lang)
+    sent = None
+    if key in _apk_cache:
+        try:
+            sent = bot.send_document(chat_id, _apk_cache[key], caption=caption)
+        except ApiTelegramException:
+            _apk_cache.pop(key, None)  # file_id eskirgan — qaytadan yuklaymiz
+    if sent is None:
+        bot.send_chat_action(chat_id, "upload_document")
+        with apk.open("rb") as f:
+            sent = bot.send_document(chat_id, f, caption=caption, visible_file_name=apk.name, timeout=300)
+        _apk_cache[key] = sent.document.file_id
+    send(bot, chat_id, texts.t("apk_guide", lang), reply_to=sent.message_id)
 
 
 # ------------------------------------------------------------------ #
@@ -416,8 +469,8 @@ def register_handlers(bot: telebot.TeleBot) -> None:
             return
         user = upsert_user(m.from_user)
         if user.reg_step == Step.DONE:
-            bot.send_message(m.chat.id, texts.t("welcome_back", user.language),
-                             reply_markup=types.ReplyKeyboardRemove())
+            bot.send_message(m.chat.id, texts.t("welcome_back", user.language, name=first_name(m.from_user)),
+                             reply_markup=main_keyboard(user.language))
         else:
             continue_registration(bot, user, m)
 
@@ -425,6 +478,21 @@ def register_handlers(bot: telebot.TeleBot) -> None:
     def _lang(m):
         upsert_user(m.from_user)
         ask_language(bot, m.chat.id)
+
+    # Ilova: /app buyrug'i yoki menyudagi tugma. Adminlarga karta bo'lib ketmasligi
+    # uchun umumiy _message handleridan OLDIN turishi shart.
+    @bot.message_handler(commands=["app", "apk"], func=private)
+    @bot.message_handler(func=lambda m: private(m) and m.text in texts.GET_APP_TEXTS)
+    def _app(m):
+        user = upsert_user(m.from_user)
+        if user.is_banned:
+            bot.send_message(m.chat.id, texts.t("banned", user.language))
+            return
+        try:
+            send_apk(bot, m.chat.id, user.language)
+        except Exception:
+            log.exception("APK yuborishda xato")
+            bot.send_message(m.chat.id, texts.t("apk_missing", user.language))
 
     @bot.message_handler(commands=["cancel"], func=admin_only)
     def _cancel(m):
