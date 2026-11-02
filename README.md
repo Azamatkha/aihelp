@@ -7,8 +7,9 @@ bosadi yoki kartaga **Reply** qiladi → javob userga uning savoliga reply bo'li
 - Har qanday turdagi xabar: matn, rasm, albom, video, ovoz, fayl, GIF, lokatsiya
 - Bitta javob userning barcha ochiq murojaatlarini yopadi, kartalar hamma adminlarda yangilanadi
 - Admin panel: `/admin/` — userlar, yozishmalar, filtrlar, qidiruv
-- Ilova: **📲 Ilovani yuklab olish** tugmasi yoki `/app` — `aiapk/` papkasidagi eng yangi
-  `.apk` userga o'rnatish ko'rsatmasi bilan yuboriladi (faqat Android). Fayl 50 MB dan
+- Ilova: `/start` dagi **📲 Ilovani yuklab olish** tugmasi yoki menyudagi `/yuklash` — `aiapk/`
+  papkasidagi eng yangi `.apk` userga yuboriladi (faqat Android). Menyu izohlari user tanlagan
+  tilda. Fayl 50 MB dan
   oshmasin (Telegram Bot API cheklovi). Yangi versiya — eski `.apk` o'rniga yangisini qo'ying,
   botni qayta ishga tushirish shart emas.
 

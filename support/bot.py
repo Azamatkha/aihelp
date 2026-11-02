@@ -204,15 +204,30 @@ def phone_keyboard(lang: str) -> types.ReplyKeyboardMarkup:
     return kb
 
 
-def main_keyboard(lang: str) -> types.ReplyKeyboardMarkup:
-    """Ro'yxatdan o'tgan user uchun doimiy menyu — ilovani yuklab olish tugmasi."""
-    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.row(types.KeyboardButton(texts.t("get_app", lang)))
+def app_keyboard(lang: str) -> types.InlineKeyboardMarkup:
+    """Salomlashuv xabari tagidagi «Ilovani yuklab olish» tugmasi."""
+    kb = types.InlineKeyboardMarkup()
+    kb.row(types.InlineKeyboardButton(texts.t("get_app", lang), callback_data="app"))
     return kb
 
 
 def first_name(u) -> str:
     return u.first_name or u.username or ""
+
+
+def greet(bot, chat_id: int, from_user, lang: str) -> None:
+    bot.send_message(chat_id, texts.t("greeting", lang, name=first_name(from_user)),
+                     reply_markup=app_keyboard(lang))
+
+
+def set_user_commands(bot, user: TelegramUser) -> None:
+    """Menyudagi buyruqlar izohini shu userga uning tanlagan tilida o'rnatadi."""
+    cmds = texts.USER_COMMANDS.get(user.language) or texts.USER_COMMANDS["uz"]
+    try:
+        bot.set_my_commands([types.BotCommand(c, d) for c, d in cmds],
+                            scope=types.BotCommandScopeChat(user.telegram_id))
+    except ApiTelegramException as e:
+        log.warning("Menyuni o'rnatib bo'lmadi (%s): %s", user.telegram_id, e)
 
 
 def ask_language(bot, chat_id: int) -> None:
@@ -226,8 +241,9 @@ def ask_phone(bot, chat_id: int, lang: str) -> None:
 def finish_registration(bot, user: TelegramUser, m) -> None:
     user.reg_step = Step.DONE
     user.save(update_fields=["reg_step", "phone"])
-    bot.send_message(m.chat.id, texts.t("welcome", user.language, name=first_name(m.from_user)),
-                     reply_markup=main_keyboard(user.language))
+    # Telefon klaviaturasini olib tashlaymiz, keyin salom + yuklab olish tugmasi
+    bot.send_message(m.chat.id, texts.t("registered", user.language), reply_markup=types.ReplyKeyboardRemove())
+    greet(bot, m.chat.id, m.from_user, user.language)
 
 
 def continue_registration(bot, user: TelegramUser, m) -> None:
@@ -259,6 +275,8 @@ def handle_lang(bot, c) -> None:
     if user.reg_step == Step.LANG:
         user.reg_step = Step.PHONE
     user.save(update_fields=["language", "reg_step"])
+    if not is_admin(user.telegram_id):
+        set_user_commands(bot, user)
     bot.answer_callback_query(c.id)
     try:
         bot.edit_message_text(texts.t("lang_saved", code), c.message.chat.id, c.message.message_id)
@@ -295,18 +313,30 @@ def send_apk(bot, chat_id: int, lang: str | None) -> None:
     st = apk.stat()
     key = (str(apk), st.st_size, st.st_mtime)
     caption = texts.t("apk_caption", lang)
-    sent = None
     if key in _apk_cache:
         try:
-            sent = bot.send_document(chat_id, _apk_cache[key], caption=caption)
+            bot.send_document(chat_id, _apk_cache[key], caption=caption, parse_mode="HTML")
+            return
         except ApiTelegramException:
             _apk_cache.pop(key, None)  # file_id eskirgan — qaytadan yuklaymiz
-    if sent is None:
-        bot.send_chat_action(chat_id, "upload_document")
-        with apk.open("rb") as f:
-            sent = bot.send_document(chat_id, f, caption=caption, visible_file_name=apk.name, timeout=300)
-        _apk_cache[key] = sent.document.file_id
-    send(bot, chat_id, texts.t("apk_guide", lang), reply_to=sent.message_id)
+    bot.send_chat_action(chat_id, "upload_document")
+    with apk.open("rb") as f:
+        sent = bot.send_document(chat_id, f, caption=caption, parse_mode="HTML",
+                                 visible_file_name=apk.name, timeout=300)
+    _apk_cache[key] = sent.document.file_id
+
+
+def request_apk(bot, chat_id: int, from_user) -> None:
+    """Buyruq, menyu yoki tugma orqali kelgan so'rov — bloklanganga yubormaymiz."""
+    user = upsert_user(from_user)
+    if user.is_banned:
+        bot.send_message(chat_id, texts.t("banned", user.language))
+        return
+    try:
+        send_apk(bot, chat_id, user.language)
+    except Exception:
+        log.exception("APK yuborishda xato")
+        bot.send_message(chat_id, texts.t("apk_missing", user.language))
 
 
 # ------------------------------------------------------------------ #
@@ -414,6 +444,10 @@ def handle_callback(bot, c) -> None:
     if c.data.startswith("lang:"):
         handle_lang(bot, c)
         return
+    if c.data == "app":
+        bot.answer_callback_query(c.id)
+        request_apk(bot, c.message.chat.id, c.from_user)
+        return
     if not is_admin(c.from_user.id):
         bot.answer_callback_query(c.id)
         return
@@ -469,8 +503,8 @@ def register_handlers(bot: telebot.TeleBot) -> None:
             return
         user = upsert_user(m.from_user)
         if user.reg_step == Step.DONE:
-            bot.send_message(m.chat.id, texts.t("welcome_back", user.language, name=first_name(m.from_user)),
-                             reply_markup=main_keyboard(user.language))
+            set_user_commands(bot, user)
+            greet(bot, m.chat.id, m.from_user, user.language)
         else:
             continue_registration(bot, user, m)
 
@@ -479,20 +513,12 @@ def register_handlers(bot: telebot.TeleBot) -> None:
         upsert_user(m.from_user)
         ask_language(bot, m.chat.id)
 
-    # Ilova: /app buyrug'i yoki menyudagi tugma. Adminlarga karta bo'lib ketmasligi
-    # uchun umumiy _message handleridan OLDIN turishi shart.
-    @bot.message_handler(commands=["app", "apk"], func=private)
+    # Ilova: /yuklash (menyuda), /app, /apk yoki eski klaviatura tugmasi. Adminlarga
+    # karta bo'lib ketmasligi uchun umumiy _message handleridan OLDIN turishi shart.
+    @bot.message_handler(commands=["yuklash", "app", "apk"], func=private)
     @bot.message_handler(func=lambda m: private(m) and m.text in texts.GET_APP_TEXTS)
     def _app(m):
-        user = upsert_user(m.from_user)
-        if user.is_banned:
-            bot.send_message(m.chat.id, texts.t("banned", user.language))
-            return
-        try:
-            send_apk(bot, m.chat.id, user.language)
-        except Exception:
-            log.exception("APK yuborishda xato")
-            bot.send_message(m.chat.id, texts.t("apk_missing", user.language))
+        request_apk(bot, m.chat.id, m.from_user)
 
     @bot.message_handler(commands=["cancel"], func=admin_only)
     def _cancel(m):
