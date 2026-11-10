@@ -109,10 +109,15 @@ class Command(BaseCommand):
         for line in _tcp_checks(host, port):
             w(f"     {line}")
 
+        # syncbackend bilan bir xil: "none" — muhitdagi HTTP(S)_PROXY ham e'tiborsiz
+        http = requests.Session()
+        if settings.BACKEND_PROXY.lower() == "none":
+            http.trust_env = False
+
         url = f"{settings.BACKEND_URL}/health/"
         w(f"\n1) GET {url}")
         try:
-            resp = requests.get(url, proxies=sync._proxies(), timeout=15)
+            resp = http.get(url, proxies=sync._proxies(), timeout=15)
             w(self.style.SUCCESS(f"   OK: HTTP {resp.status_code} {resp.text[:200]}"))
         except Exception as e:
             for i, line in enumerate(_cause_chain(e)):
@@ -133,7 +138,7 @@ class Command(BaseCommand):
             return
         w("\n3) POST /v1/telegram-bot/sync (bo'sh so'rov, kalitni tekshirish)")
         try:
-            resp = requests.post(
+            resp = http.post(
                 f"{settings.BACKEND_URL}/v1/telegram-bot/sync",
                 json={"users": [], "messages": []},
                 headers={"X-Bot-Key": settings.BACKEND_API_KEY},
