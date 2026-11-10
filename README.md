@@ -24,6 +24,8 @@ bot o'zi tunnel orqali yuboradi. `.env` ga:
 BACKEND_URL=https://face-ids.turonbank.uz:9447
 BACKEND_API_KEY=<backend .env dagi TELEGRAM_BOT_API_KEY bilan bir xil>
 # BACKEND_SYNC_INTERVAL=60
+# Faqat proxy orqali chiqish kerak bo'lsa (bank tarmog'i); "none" — proxy'siz
+# BACKEND_PROXY=http://192.168.2.112:3128
 ```
 
 Tekshirish: `python manage.py syncbackend` (bir marta yuboradi, `--full` — hammasini qaytadan).

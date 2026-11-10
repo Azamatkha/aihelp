@@ -79,11 +79,21 @@ def _message_row(m: Message) -> dict:
     }
 
 
+def _proxies() -> dict | None:
+    proxy = settings.BACKEND_PROXY
+    if not proxy or proxy.lower() == "none":
+        return None
+    return {"http": proxy, "https": proxy}
+
+
 def _post(session: requests.Session, users: list, messages: list) -> dict:
+    # Proxy har so'rovga alohida beriladi: requests'da muhitdagi HTTPS_PROXY
+    # session.proxies dan ustun turadi, so'rovniki esa — hammasidan.
     resp = session.post(
         f"{settings.BACKEND_URL}/v1/telegram-bot/sync",
         json={"users": users, "messages": messages},
         headers={"X-Bot-Key": settings.BACKEND_API_KEY},
+        proxies=_proxies(),
         timeout=30,
     )
     if resp.status_code != 200:
@@ -105,6 +115,8 @@ def sync_once(full: bool = False) -> tuple[int, int]:
 
     sent_users = sent_messages = 0
     with requests.Session() as session:
+        if settings.BACKEND_PROXY.lower() == "none":
+            session.trust_env = False  # to'g'ridan-to'g'ri, tizim proxy'sini ham chetlab
         # Avval userlar — xabarlar ularga bog'lanadi
         for i in range(0, len(users), BATCH):
             sent_users += _post(session, users[i:i + BATCH], [])["users"]
@@ -116,8 +128,8 @@ def sync_once(full: bool = False) -> tuple[int, int]:
 
 
 def _loop(stop: threading.Event) -> None:
-    log.info("Backendga sinxronizatsiya yoqildi: %s (har %s s)",
-             settings.BACKEND_URL, settings.BACKEND_SYNC_INTERVAL)
+    log.info("Backendga sinxronizatsiya yoqildi: %s (har %s s, proxy: %s)",
+             settings.BACKEND_URL, settings.BACKEND_SYNC_INTERVAL, settings.BACKEND_PROXY or "yo'q")
     while not stop.is_set():
         close_old_connections()
         try:
@@ -125,7 +137,7 @@ def _loop(stop: threading.Event) -> None:
             if messages:
                 log.info("Sync: %s user, %s xabar yuborildi", users, messages)
         except Exception as e:  # tarmoq/tunnel uzilsa — keyingi safar qayta urinadi
-            log.warning("Backendga yuborib bo'lmadi: %s", e)
+            log.warning("Backendga yuborib bo'lmadi: %s: %s", type(e).__name__, e)
         finally:
             close_old_connections()
         stop.wait(max(settings.BACKEND_SYNC_INTERVAL, 10))

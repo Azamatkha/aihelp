@@ -33,6 +33,9 @@ APK_DIR = Path(os.getenv("APK_DIR") or BASE_DIR / "aiapk")
 BACKEND_URL = os.getenv("BACKEND_URL", "").rstrip("/")
 BACKEND_API_KEY = os.getenv("BACKEND_API_KEY", "")
 BACKEND_SYNC_INTERVAL = int(os.getenv("BACKEND_SYNC_INTERVAL", "60"))
+# Backendga proxy orqali chiqish kerak bo'lsa (masalan bank tarmog'ida). Bo'sh — odatiy
+# ulanish (tizim sozlamasi bo'yicha); "none" — har qanday proxy'siz, to'g'ridan-to'g'ri.
+BACKEND_PROXY = os.getenv("BACKEND_PROXY", "")
 
 INSTALLED_APPS = [
     "django.contrib.admin",
