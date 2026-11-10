@@ -24,6 +24,17 @@ from support.models import Message, TelegramUser
 
 log = logging.getLogger(__name__)
 
+# Sertifikatni brauzer kabi Windows ombori orqali tekshiramiz. requests o'zining
+# certifi ro'yxatini ishlatadi va server bermagan oraliq sertifikatni topa olmaydi —
+# brauzerda ochiladigan https://face-ids...:9447 Python'da CERTIFICATE_VERIFY_FAILED
+# berardi. Butun jarayonga ta'sir qiladi (bot uchun ham — faqat foydali).
+try:
+    import truststore
+
+    truststore.inject_into_ssl()
+except ImportError:
+    log.warning("truststore o'rnatilmagan — sertifikat certifi bilan tekshiriladi")
+
 BATCH = 500
 # Soatlar farqi / sekin tranzaksiyalar uchun zaxira
 OVERLAP = timedelta(minutes=5)

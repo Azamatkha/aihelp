@@ -30,6 +30,8 @@ BACKEND_API_KEY=<backend .env dagi TELEGRAM_BOT_API_KEY bilan bir xil>
 
 Tekshirish: `python manage.py syncbackend` (bir marta yuboradi, `--full` — hammasini qaytadan).
 Ulanish xatolari `logs\bot.log` da: "Backendga yuborib bo'lmadi: ...".
+Sertifikat Windows ombori orqali tekshiriladi (`truststore`) — brauzerda ochilgan sayt
+Python'da ham ochiladi. `CERTIFICATE_VERIFY_FAILED` chiqsa: `pip install -r requirements.txt`.
 
 ## O'rnatish (Windows)
 
