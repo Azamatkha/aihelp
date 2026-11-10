@@ -1,0 +1,17 @@
+# Botning Django admin paneli — faqat serverning o'ziga (127.0.0.1:8010) ochiq.
+# Ko'rish: ssh -L 8010:127.0.0.1:8010 <server>  ->  http://localhost:8010/admin/
+[Unit]
+Description=AI Help admin panel
+After=network-online.target aihelp-bot.service
+
+[Service]
+Type=simple
+User=iccturon
+WorkingDirectory=/opt/aihelp
+Environment=PYTHONUNBUFFERED=1 PYTHONUTF8=1
+ExecStart=/opt/aihelp/venv/bin/python -m waitress --listen=127.0.0.1:8010 config.wsgi:application
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
