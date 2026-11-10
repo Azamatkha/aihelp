@@ -27,6 +27,13 @@ TELEGRAM_PROXY = os.getenv("TELEGRAM_PROXY", "")
 # Userlarga yuboriladigan Android ilova (.apk) shu papkadan olinadi — eng yangisi
 APK_DIR = Path(os.getenv("APK_DIR") or BASE_DIR / "aiapk")
 
+# --- turon-ai backendga sinxronizatsiya ---
+# Bot userlari va murojaatlari shu manzilga davriy yuboriladi (admin panelda ko'rinadi).
+# URL bo'sh bo'lsa — sinxronizatsiya o'chiq.
+BACKEND_URL = os.getenv("BACKEND_URL", "").rstrip("/")
+BACKEND_API_KEY = os.getenv("BACKEND_API_KEY", "")
+BACKEND_SYNC_INTERVAL = int(os.getenv("BACKEND_SYNC_INTERVAL", "60"))
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",

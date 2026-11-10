@@ -14,6 +14,21 @@ bosadi yoki kartaga **Reply** qiladi → javob userga uning savoliga reply bo'li
     hajm cheklovi yo'q (100 MB+ ham bo'ladi), har safar qayta yuklanmaydi.
   - Zaxira: `aiapk/` papkasidagi eng yangi `.apk` — faqat 50 MB gacha (Bot API cheklovi).
 
+## turon-ai admin paneliga ulash
+
+Bot userlari va murojaatlari turon-ai backendga fonda (har 60 s) yuboriladi va admin
+panelda **«Telegram bot»** bo'limida ko'rinadi. Server noutbukka ulana olmaydi —
+bot o'zi tunnel orqali yuboradi. `.env` ga:
+
+```
+BACKEND_URL=https://face-ids.turonbank.uz:9447
+BACKEND_API_KEY=<backend .env dagi TELEGRAM_BOT_API_KEY bilan bir xil>
+# BACKEND_SYNC_INTERVAL=60
+```
+
+Tekshirish: `python manage.py syncbackend` (bir marta yuboradi, `--full` — hammasini qaytadan).
+Ulanish xatolari `logs\bot.log` da: "Backendga yuborib bo'lmadi: ...".
+
 ## O'rnatish (Windows)
 
 ```powershell
