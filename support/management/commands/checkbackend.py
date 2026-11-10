@@ -4,6 +4,8 @@ import socket
 import ssl
 import sys
 import tempfile
+import time
+import urllib.request
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -41,6 +43,45 @@ def _server_certificate(host: str, port: int) -> dict:
         Path(f.name).unlink(missing_ok=True)
 
 
+def _windows_proxy() -> dict:
+    """Brauzer (Edge/Chrome) ishlatadigan Windows proxy sozlamalari — registrdan."""
+    try:
+        import winreg
+    except ImportError:
+        return {}
+    out = {}
+    path = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, path) as key:
+            for name in ("ProxyEnable", "ProxyServer", "ProxyOverride", "AutoConfigURL", "AutoDetect"):
+                try:
+                    out[name] = winreg.QueryValueEx(key, name)[0]
+                except OSError:
+                    pass
+    except OSError as e:
+        out["xato"] = str(e)
+    return out
+
+
+def _tcp_checks(host: str, port: int) -> list[str]:
+    """DNS natijasi va har bir IP ga to'g'ridan-to'g'ri TCP ulanish (proxy'siz)."""
+    lines = []
+    try:
+        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except OSError as e:
+        return [f"DNS xato: {type(e).__name__}: {e}"]
+    for family, _, _, _, addr in dict.fromkeys((i[0], i[1], i[2], i[3], i[4]) for i in infos):
+        started = time.monotonic()
+        try:
+            with socket.socket(family, socket.SOCK_STREAM) as s:
+                s.settimeout(10)
+                s.connect(addr)
+            lines.append(f"{addr[0]} -> OK ({time.monotonic() - started:.1f} s)")
+        except OSError as e:
+            lines.append(f"{addr[0]} -> {type(e).__name__}: {e} ({time.monotonic() - started:.1f} s)")
+    return lines
+
+
 def _name(parts) -> str:
     return ", ".join(f"{k}={v}" for rdn in parts for k, v in rdn)
 
@@ -57,6 +98,17 @@ class Command(BaseCommand):
         w(f"Manzil:     {settings.BACKEND_URL}")
         w(f"Proxy:      {settings.BACKEND_PROXY or 'yo`q'}")
 
+        parts = urlsplit(settings.BACKEND_URL)
+        host, port = parts.hostname, parts.port or 443
+
+        # Brauzer ochyapti-yu Python ochmasa — odatda brauzer proxy/PAC orqali chiqadi
+        w("\n0) Tarmoq")
+        w(f"   Windows proxy (brauzerniki): {_windows_proxy() or '—'}")
+        w(f"   Python ko'radigan proxy:     {urllib.request.getproxies() or '—'}")
+        w(f"   DNS + TCP {host}:{port} (proxy'siz):")
+        for line in _tcp_checks(host, port):
+            w(f"     {line}")
+
         url = f"{settings.BACKEND_URL}/health/"
         w(f"\n1) GET {url}")
         try:
@@ -66,8 +118,6 @@ class Command(BaseCommand):
             for i, line in enumerate(_cause_chain(e)):
                 w(self.style.ERROR(f"   {'  ' * i}{line}"))
 
-        parts = urlsplit(settings.BACKEND_URL)
-        host, port = parts.hostname, parts.port or 443
         w(f"\n2) Server sertifikati ({host}:{port}, tekshirmasdan)")
         try:
             cert = _server_certificate(host, port)
