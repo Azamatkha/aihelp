@@ -1,7 +1,0 @@
-venv/
-.env
-data/
-logs/
-staticfiles/
-__pycache__/
-.git/

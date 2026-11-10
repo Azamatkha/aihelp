@@ -291,17 +291,10 @@ def handle_lang(bot, c) -> None:
 # ------------------------------------------------------------------ #
 # Ilova (APK) yuborish
 # ------------------------------------------------------------------ #
-# Asosiy usul: admin APK ni botga Telegram orqali tashlaydi, bot uning file_id sini
-# data/apk.json ga saqlaydi va userlarga shu file_id bilan yuboradi. Bot API o'zi 50 MB
-# dan katta fayl yuklay olmaydi, lekin file_id bilan istalgan hajmdagini qayta yuboradi —
-# fayl Telegram serverida turadi, har safar yuklanmaydi.
-# Zaxira usul: aiapk/ papkasidagi fayl (faqat 50 MB gacha).
+# Admin APK ni botga Telegram orqali tashlaydi, bot uning file_id sini data/apk.json ga
+# saqlaydi va userlarga shu file_id bilan yuboradi. Fayl Telegram serverida turadi —
+# hajm cheklovi yo'q (100 MB+ ham), serverda papka kerak emas, har safar yuklanmaydi.
 APK_STORE = settings.DATA_DIR / "apk.json"
-BOT_UPLOAD_LIMIT = 50 * 1024 * 1024
-
-# aiapk/ dan yuklangan fayl uchun file_id keshi.
-# Kalit — (fayl yo'li, hajmi, o'zgargan vaqti): yangi APK qo'yilsa kesh o'zi eskiradi.
-_apk_cache: dict[tuple, str] = {}
 
 
 def stored_apk() -> dict | None:
@@ -333,49 +326,18 @@ def save_apk(bot, m) -> None:
          reply_to=m.message_id)
 
 
-def latest_apk():
-    """aiapk/ ichidagi eng yangi .apk fayl (yo'q bo'lsa — None)."""
-    folder = settings.APK_DIR
-    if not folder.is_dir():
-        return None
-    apks = [p for p in folder.iterdir() if p.is_file() and p.suffix.lower() == ".apk"]
-    return max(apks, key=lambda p: p.stat().st_mtime, default=None)
-
-
 def send_apk(bot, chat_id: int, lang: str | None) -> None:
-    caption = texts.t("apk_caption", lang)
     stored = stored_apk()
     if stored:
         try:
-            bot.send_document(chat_id, stored["file_id"], caption=caption, parse_mode="HTML")
+            bot.send_document(chat_id, stored["file_id"],
+                              caption=texts.t("apk_caption", lang), parse_mode="HTML")
             return
         except ApiTelegramException as e:
-            log.error("Saqlangan APK (file_id) yuborilmadi, papkadan urinamiz: %s", e)
-
-    apk = latest_apk()
-    if apk is None:
-        log.warning("APK yo'q: adminlar botga .apk tashlamagan, %s papkasi ham bo'sh", settings.APK_DIR)
-        bot.send_message(chat_id, texts.t("apk_missing", lang))
-        return
-    if apk.stat().st_size > BOT_UPLOAD_LIMIT:
-        log.error("%s 50 MB dan katta — bot uni yuklay olmaydi. Admin APK ni botga "
-                  "Telegram orqali tashlashi kerak.", apk.name)
-        bot.send_message(chat_id, texts.t("apk_missing", lang))
-        return
-
-    st = apk.stat()
-    key = (str(apk), st.st_size, st.st_mtime)
-    if key in _apk_cache:
-        try:
-            bot.send_document(chat_id, _apk_cache[key], caption=caption, parse_mode="HTML")
-            return
-        except ApiTelegramException:
-            _apk_cache.pop(key, None)  # file_id eskirgan — qaytadan yuklaymiz
-    bot.send_chat_action(chat_id, "upload_document")
-    with apk.open("rb") as f:
-        sent = bot.send_document(chat_id, f, caption=caption, parse_mode="HTML",
-                                 visible_file_name=apk.name, timeout=300)
-    _apk_cache[key] = sent.document.file_id
+            log.error("Saqlangan APK (file_id) yuborilmadi: %s", e)
+    else:
+        log.warning("APK yo'q: adminlar hali botga .apk tashlamagan")
+    bot.send_message(chat_id, texts.t("apk_missing", lang))
 
 
 def request_apk(bot, chat_id: int, from_user) -> None:

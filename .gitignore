@@ -8,4 +8,4 @@ __pycache__/
 .idea/
 .vscode/
 # APK katta — gitga qo'shilmaydi, run qilinadigan kompyuterda qo'lda qo'yiladi
-aiapk/*.apk
+*.apk
