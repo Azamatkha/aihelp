@@ -111,6 +111,7 @@ class Command(BaseCommand):
 
         # syncbackend bilan bir xil: "none" — muhitdagi HTTP(S)_PROXY ham e'tiborsiz
         http = requests.Session()
+        http.headers["User-Agent"] = sync.USER_AGENT  # nginx python-requests'ni 403 qiladi
         if settings.BACKEND_PROXY.lower() == "none":
             http.trust_env = False
 

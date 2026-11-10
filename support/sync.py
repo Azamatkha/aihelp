@@ -35,6 +35,10 @@ try:
 except ImportError:
     log.warning("truststore o'rnatilmagan — sertifikat certifi bilan tekshiriladi")
 
+# 9447 dagi nginx "python-requests" / "curl" User-Agent'larini 403 bilan to'sadi
+# (bot-filtr), shuning uchun o'z nomimiz bilan boramiz.
+USER_AGENT = "TuronAIHelpBot/1.0"
+
 BATCH = 500
 # Soatlar farqi / sekin tranzaksiyalar uchun zaxira
 OVERLAP = timedelta(minutes=5)
@@ -103,7 +107,7 @@ def _post(session: requests.Session, users: list, messages: list) -> dict:
     resp = session.post(
         f"{settings.BACKEND_URL}/v1/telegram-bot/sync",
         json={"users": users, "messages": messages},
-        headers={"X-Bot-Key": settings.BACKEND_API_KEY},
+        headers={"X-Bot-Key": settings.BACKEND_API_KEY, "User-Agent": USER_AGENT},
         proxies=_proxies(),
         timeout=30,
     )
